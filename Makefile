@@ -17,6 +17,8 @@ CUSTOMIZATIONS_CONFIG ?= customizations.yaml
 ARTIFACTS := $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts|keys[]' 2>/dev/null || echo '')
 CUSTOMIZATION_REGISTRY ?= $(DOCKER_REGISTRY)
 
+CUSTOMIZATION_SUFFIX ?= _custom
+
 PLATFORMS ?= linux/amd64
 # PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -37,10 +39,30 @@ endif
 
 
 .PHONY: all build push summary clean build-image build-combination-% $(IMAGES) \
-        list-customizations build-customizations push-customizations build-artifact-% push-artifact-%
+        list-customizations build-customizations push-customizations build-artifact-% push-artifact-% \
+        build-customized-image build-customized-combination-% build-customized
 
 all: build summary
 
+define stage_status
+	@echo
+	@echo
+	@echo ================================================================================
+	@echo Building: $(1)
+	@echo ================================================================================
+endef
+
+define summary
+	@echo
+	@echo
+	@echo ================================================================================
+	@echo Generated images:
+	@echo ================================================================================
+	@docker image ls \
+		--format "{{.Repository}}:{{.Tag}}\t{{.Size}}" \
+		--filter=dangling=false \
+		--filter=reference="$(DOCKER_REGISTRY)/*:*" | sort | column -t
+endef
 
 install-dhictl:
 	@echo "Installing dhictl plugin for Docker CLI"
@@ -80,26 +102,54 @@ $(addprefix build-combination-,$(ALL_COMBINATIONS)): build-combination-%:
 build: $(addprefix build-combination-,$(ALL_COMBINATIONS))
 	$(call stage_status,build)
 
-
-define stage_status
-	@echo
-	@echo
-	@echo ================================================================================
-	@echo Building: $(1)
-	@echo ================================================================================
-endef
-
-define summary
-	@echo
-	@echo
-	@echo ================================================================================
-	@echo Generated images:
-	@echo ================================================================================
-	@docker image ls \
-		--format "{{.Repository}}:{{.Tag}}\t{{.Size}}" \
-		--filter=dangling=false \
-		--filter=reference="$(DOCKER_REGISTRY)/*:*" | sort | column -t
-endef
+build-customized-image:
+	$(call stage_status,build-customized-image: $(IMAGE)/$(OS)/$(VARIANT) with customizations)
+	@TEMP_DIR=$$(mktemp -d); \
+	IMAGE_PLATFORMS=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
+	IMAGE_PLATFORMS=$${IMAGE_PLATFORMS:-$(PLATFORMS)}; \
+	\
+	GLOBAL_CUSTOMIZATIONS=$$(cat $(BUILD_CONFIG) | yq -r '.global_customizations[]?.artifact' 2>/dev/null | tr '\n' ' '); \
+	IMAGE_CUSTOMIZATIONS=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].customizations[]?.artifact' 2>/dev/null | tr '\n' ' '); \
+	ALL_CUSTOMIZATIONS="$$GLOBAL_CUSTOMIZATIONS $$IMAGE_CUSTOMIZATIONS"; \
+	\
+	if [ -z "$${ALL_CUSTOMIZATIONS// }" ]; then \
+		echo "No customizations defined for $(IMAGE), building base image"; \
+		$(MAKE) build-image IMAGE=$(IMAGE) OS=$(OS) VARIANT=$(VARIANT); \
+		rm -rf $$TEMP_DIR; \
+		exit 0; \
+	fi; \
+	\
+	echo "Building base image first..."; \
+	$(MAKE) build-image IMAGE=$(IMAGE) OS=$(OS) VARIANT=$(VARIANT) > /dev/null 2>&1 || { echo "Failed to build base image"; rm -rf $$TEMP_DIR; exit 1; }; \
+	\
+	echo "# Customized DHI Image" > $$TEMP_DIR/Dockerfile; \
+	echo "FROM $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)" >> $$TEMP_DIR/Dockerfile; \
+	echo "" >> $$TEMP_DIR/Dockerfile; \
+	\
+	for ARTIFACT in $$ALL_CUSTOMIZATIONS; do \
+		[ -z "$$ARTIFACT" ] && continue; \
+		echo "Building OCI artifact: $$ARTIFACT"; \
+		$(MAKE) build-artifact-$$ARTIFACT > /dev/null 2>&1 || { echo "Failed to build artifact $$ARTIFACT"; rm -rf $$TEMP_DIR; exit 1; }; \
+		\
+		GLOBAL_PATHS=$$(cat $(BUILD_CONFIG) | yq -r ".global_customizations[]? | select(.artifact == \"$$ARTIFACT\") | .paths[]? | \"\\(.src)|\\(.dest)\"" 2>/dev/null); \
+		IMAGE_PATHS=$$(cat $(BUILD_CONFIG) | yq -r ".images[\"$(IMAGE)\"].customizations[]? | select(.artifact == \"$$ARTIFACT\") | .paths[]? | \"\\(.src)|\\(.dest)\"" 2>/dev/null); \
+		\
+		while IFS='|' read -r SRC DEST; do \
+			[ -z "$$SRC" ] && continue; \
+			echo "COPY --from=$(CUSTOMIZATION_REGISTRY)/dhi-customization-$$ARTIFACT:$(GIT_TAG) $$SRC $$DEST" >> $$TEMP_DIR/Dockerfile; \
+		done <<< "$$(echo -e "$$GLOBAL_PATHS\n$$IMAGE_PATHS")"; \
+	done; \
+	\
+	docker buildx build \
+		--platform $$IMAGE_PLATFORMS \
+		$$TEMP_DIR \
+		--file $$TEMP_DIR/Dockerfile \
+		--sbom=generator=dhi.io/scout-sbom-indexer:1 \
+		--provenance=1 \
+		--tag $(DOCKER_REGISTRY)/$(IMAGE)$(CUSTOMIZATION_SUFFIX):$(GIT_TAG) \
+		--load; \
+	\
+	rm -rf $$TEMP_DIR
 
 
 # Customization targets
@@ -137,6 +187,15 @@ push-customizations: $(addprefix push-artifact-,$(ARTIFACTS))
 	$(call stage_status,push-customizations)
 
 
+# Build customized image combinations
+$(addprefix build-customized-combination-,$(ALL_COMBINATIONS)): build-customized-combination-%:
+	@IMAGE_NAME=$$(echo '$*' | cut -d, -f1); \
+	IMAGE_OS=$$(echo '$*' | cut -d, -f2); \
+	IMAGE_VARIANT=$$(echo '$*' | cut -d, -f3); \
+	$(MAKE) build-customized-image IMAGE=$$IMAGE_NAME OS=$$IMAGE_OS VARIANT=$$IMAGE_VARIANT
+
+build-customized: $(addprefix build-customized-combination-,$(ALL_COMBINATIONS))
+	$(call stage_status,build-customized)
 clean:
 	@docker image rm -f $(shell docker image ls --format "{{.Repository}}:{{.Tag}}" --filter=dangling=false --filter=reference="$(DOCKER_REGISTRY)/*:*") 2>/dev/null || true
 

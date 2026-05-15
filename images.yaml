@@ -1,18 +1,32 @@
 ---
+# Global customizations applied to all images
+global_customizations:
+  # - artifact: ca-cert
+  #   paths:
+  #     - src: /etc/ssl/certs/ca-certificates.crt
+  #       dest: /etc/ssl/certs/ca-certificates.crt
+
 images:
   alpine-base:
-    platforms:
-      - linux/amd64
-      - linux/arm64
+    # platforms:
+    #   - linux/amd64
+    #   - linux/arm64
     os:
       - alpine-3.23
     variants:
       - "3.23"
       - "3.23-dev"
+    # Per-image customizations
+    customizations: []
+      # - artifact: npmrc
+      #   paths:
+      #     - src: /root/.npmrc
+      #       dest: /root/.npmrc
+
   amazoncorretto:
-    platforms:
-      - linux/amd64
-      - linux/arm64
+    # platforms:
+    #   - linux/amd64
+    #   - linux/arm64
     os:
       - alpine-3.23
       - debian-13
@@ -23,3 +37,8 @@ images:
       - 21-dev
       - 25
       - 25-dev
+    customizations:
+      - artifact: npmrc
+        paths:
+          - src: /root/.npmrc
+            dest: /root/.npmrc
