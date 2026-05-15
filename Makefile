@@ -77,18 +77,18 @@ list-images:
 	@echo "$(ALL_COMBINATIONS)" | tr ' ' '\n' | sort
 
 build-image:
-	$(call stage_status,build-image: $(IMAGE)/$(OS)/$(VARIANT))
+	$(call stage_status,build-image: $(IMAGE)/$(OS)/$(VARIANT):$(GIT_TAG))
 	@{ \
 		IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(VARIANT).yaml; \
+		IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
 		IMAGE_PLATFORMS=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
 		IMAGE_PLATFORMS=$${IMAGE_PLATFORMS:-$(PLATFORMS)}; \
-		IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
 		docker buildx build \
 			--platform $$IMAGE_PLATFORMS \
-			$$IMAGE_URL \
 			--sbom=generator=dhi.io/scout-sbom-indexer:1 \
 			--provenance=1 \
-			--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG) \
+			$$IMAGE_URL \
+			--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(VARIANT)-$(OS) \
 			$$IMAGE_TAGS \
 			--load; \
 	}
@@ -99,7 +99,7 @@ $(addprefix build-combination-,$(ALL_COMBINATIONS)): build-combination-%:
 	IMAGE_VARIANT=$$(echo '$*' | cut -d, -f3); \
 	$(MAKE) build-image IMAGE=$$IMAGE_NAME OS=$$IMAGE_OS VARIANT=$$IMAGE_VARIANT
 
-build: $(addprefix build-combination-,$(ALL_COMBINATIONS))
+build: build-customizations $(addprefix build-combination-,$(ALL_COMBINATIONS)) build-customized
 	$(call stage_status,build)
 
 build-customized-image:
@@ -113,17 +113,13 @@ build-customized-image:
 	ALL_CUSTOMIZATIONS="$$GLOBAL_CUSTOMIZATIONS $$IMAGE_CUSTOMIZATIONS"; \
 	\
 	if [ -z "$${ALL_CUSTOMIZATIONS// }" ]; then \
-		echo "No customizations defined for $(IMAGE), building base image"; \
-		$(MAKE) build-image IMAGE=$(IMAGE) OS=$(OS) VARIANT=$(VARIANT); \
+		echo "No customizations defined for $(IMAGE), skipping..."; \
 		rm -rf $$TEMP_DIR; \
 		exit 0; \
 	fi; \
 	\
-	echo "Building base image first..."; \
-	$(MAKE) build-image IMAGE=$(IMAGE) OS=$(OS) VARIANT=$(VARIANT) > /dev/null 2>&1 || { echo "Failed to build base image"; rm -rf $$TEMP_DIR; exit 1; }; \
-	\
 	echo "# Customized DHI Image" > $$TEMP_DIR/Dockerfile; \
-	echo "FROM $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)" >> $$TEMP_DIR/Dockerfile; \
+	echo "FROM $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(VARIANT)-$(OS)" >> $$TEMP_DIR/Dockerfile; \
 	echo "" >> $$TEMP_DIR/Dockerfile; \
 	\
 	for ARTIFACT in $$ALL_CUSTOMIZATIONS; do \
@@ -140,13 +136,16 @@ build-customized-image:
 		done <<< "$$(echo -e "$$GLOBAL_PATHS\n$$IMAGE_PATHS")"; \
 	done; \
 	\
+	IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(VARIANT).yaml; \
+	IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
 	docker buildx build \
 		--platform $$IMAGE_PLATFORMS \
-		$$TEMP_DIR \
-		--file $$TEMP_DIR/Dockerfile \
 		--sbom=generator=dhi.io/scout-sbom-indexer:1 \
 		--provenance=1 \
-		--tag $(DOCKER_REGISTRY)/$(IMAGE)$(CUSTOMIZATION_SUFFIX):$(GIT_TAG) \
+		$$TEMP_DIR \
+		--file $$TEMP_DIR/Dockerfile \
+		--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(VARIANT)-$(OS) \
+		$$IMAGE_TAGS \
 		--load; \
 	\
 	rm -rf $$TEMP_DIR
