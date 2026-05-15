@@ -1,0 +1,6 @@
+---
+images:
+  alpine-base:
+    url: https://raw.githubusercontent.com/docker-hardened-images/catalog/refs/heads/main/image/alpine-base/alpine-3.23/3.23.yaml
+  alpine-base-dev:
+    url: https://raw.githubusercontent.com/docker-hardened-images/catalog/refs/heads/main/image/alpine-base/alpine-3.23/3.23-dev.yaml
