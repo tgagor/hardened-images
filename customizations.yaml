@@ -1,0 +1,19 @@
+---
+# OCI Artifacts for DHI Customizations
+# Each artifact is a minimal Docker image (FROM scratch) containing files to add to DHI images
+artifacts:
+  npmrc:
+    description: "Custom .npmrc configuration with proxy settings"
+    dockerfile: "customizations/npmrc/Dockerfile"
+    push: true
+    platforms:
+      - linux/amd64
+      - linux/arm64
+  # Example of another customization:
+  # ca-cert:
+  #   description: "Custom root CA certificate"
+  #   dockerfile: "customizations/ca-cert/Dockerfile"
+  #   push: true
+  #   platforms:
+  #     - linux/amd64
+  #     - linux/arm64

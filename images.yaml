@@ -1,12 +1,18 @@
 ---
 images:
   alpine-base:
+    platforms:
+      - linux/amd64
+      - linux/arm64
     os:
       - alpine-3.23
     variants:
       - "3.23"
       - "3.23-dev"
   amazoncorretto:
+    platforms:
+      - linux/amd64
+      - linux/arm64
     os:
       - alpine-3.23
       - debian-13

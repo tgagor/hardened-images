@@ -13,6 +13,13 @@ IMAGES := $(shell cat $(BUILD_CONFIG) | yq -r '.images|keys[]')
 ALL_COMBINATIONS := $(shell cat $(BUILD_CONFIG) | yq -r '.images | to_entries | .[] | .key as $$image | .value.os[] as $$os | .value.variants[] as $$variant | "\($$image),\($$os),\($$variant)"')
 DHICTL_VERSION ?= latest
 
+CUSTOMIZATIONS_CONFIG ?= customizations.yaml
+ARTIFACTS := $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts|keys[]' 2>/dev/null || echo '')
+CUSTOMIZATION_REGISTRY ?= $(DOCKER_REGISTRY)
+
+PLATFORMS ?= linux/amd64
+# PLATFORMS ?= linux/amd64,linux/arm64
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
 	OS_NAME += linux
@@ -29,9 +36,10 @@ ifneq ($(filter arm%,$(UNAME_M)),)
 endif
 
 
-.PHONY: all build push summary clean build-image build-combination-% $(IMAGES)
+.PHONY: all build push summary clean build-image build-combination-% $(IMAGES) \
+        list-customizations build-customizations push-customizations build-artifact-% push-artifact-%
 
-all: summary
+all: build summary
 
 
 install-dhictl:
@@ -44,14 +52,17 @@ install-dhictl:
 
 list-images:
 	@echo "Configured images to build:"
-	@echo "$(ALL_COMBINATIONS)"
+	@echo "$(ALL_COMBINATIONS)" | tr ' ' '\n' | sort
 
 build-image:
 	$(call stage_status,build-image: $(IMAGE)/$(OS)/$(VARIANT))
 	@{ \
 		IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(VARIANT).yaml; \
+		IMAGE_PLATFORMS=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
+		IMAGE_PLATFORMS=$${IMAGE_PLATFORMS:-$(PLATFORMS)}; \
 		IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
 		docker buildx build \
+			--platform $$IMAGE_PLATFORMS \
 			$$IMAGE_URL \
 			--sbom=generator=dhi.io/scout-sbom-indexer:1 \
 			--provenance=1 \
@@ -89,6 +100,41 @@ define summary
 		--filter=dangling=false \
 		--filter=reference="$(DOCKER_REGISTRY)/*:*" | sort | column -t
 endef
+
+
+# Customization targets
+list-customizations:
+	@echo "Available customization artifacts:"
+	@echo "$(ARTIFACTS)" | tr ' ' '\n'
+
+build-artifact-%: ARTIFACT=$*
+build-artifact-%:
+	$(call stage_status,build-artifact: $(ARTIFACT))
+	@ARTIFACT_PLATFORMS=$$(cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts["$(ARTIFACT)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
+	ARTIFACT_PLATFORMS=$${ARTIFACT_PLATFORMS:-$(PLATFORMS)}; \
+	docker buildx build \
+		--platform $$ARTIFACT_PLATFORMS \
+		--file $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts["$(ARTIFACT)"].dockerfile') \
+		--tag $(CUSTOMIZATION_REGISTRY)/dhi-customization-$(ARTIFACT):$(GIT_TAG) \
+		customizations/$(ARTIFACT)
+
+push-artifact-%: ARTIFACT=$*
+push-artifact-%: build-artifact-$(ARTIFACT)
+	$(call stage_status,push-artifact: $(ARTIFACT))
+	@ARTIFACT_PLATFORMS=$$(cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts["$(ARTIFACT)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
+	ARTIFACT_PLATFORMS=$${ARTIFACT_PLATFORMS:-$(PLATFORMS)}; \
+	docker buildx build \
+		--platform $$ARTIFACT_PLATFORMS \
+		--file $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts["$(ARTIFACT)"].dockerfile') \
+		--tag $(CUSTOMIZATION_REGISTRY)/dhi-customization-$(ARTIFACT):$(GIT_TAG) \
+		--push \
+		customizations/$(ARTIFACT)
+
+build-customizations: $(addprefix build-artifact-,$(ARTIFACTS))
+	$(call stage_status,build-customizations)
+
+push-customizations: $(addprefix push-artifact-,$(ARTIFACTS))
+	$(call stage_status,push-customizations)
 
 
 clean:
