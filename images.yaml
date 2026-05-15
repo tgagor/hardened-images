@@ -1,6 +1,19 @@
 ---
 images:
   alpine-base:
-    url: https://raw.githubusercontent.com/docker-hardened-images/catalog/refs/heads/main/image/alpine-base/alpine-3.23/3.23.yaml
-  alpine-base-dev:
-    url: https://raw.githubusercontent.com/docker-hardened-images/catalog/refs/heads/main/image/alpine-base/alpine-3.23/3.23-dev.yaml
+    os:
+      - alpine-3.23
+    variants:
+      - "3.23"
+      - "3.23-dev"
+  amazoncorretto:
+    os:
+      - alpine-3.23
+      - debian-13
+    variants:
+      - 17
+      - 17-dev
+      - 21
+      - 21-dev
+      - 25
+      - 25-dev

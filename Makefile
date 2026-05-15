@@ -7,8 +7,10 @@ GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 GIT_URL ?= $(shell git config --get remote.origin.url)
 GIT_TAG ?= $(shell echo $(GIT_BRANCH) | sed -E 's/[/:]/-/g' | sed 's/main/latest/' )
 DHICTL ?= docker dhi
+DHI_REPO_URL ?= https://raw.githubusercontent.com/docker-hardened-images/catalog/refs/heads/main/image/
 # MAINTAINER ?= $(shell cat $(BUILD_CONFIG)| yq -r '.maintainer')
 IMAGES := $(shell cat $(BUILD_CONFIG) | yq -r '.images|keys[]')
+ALL_COMBINATIONS := $(shell cat $(BUILD_CONFIG) | yq -r '.images | to_entries | .[] | .key as $$image | .value.os[] as $$os | .value.variants[] as $$variant | "\($$image),\($$os),\($$variant)"')
 DHICTL_VERSION ?= latest
 
 UNAME_S := $(shell uname -s)
@@ -27,7 +29,7 @@ ifneq ($(filter arm%,$(UNAME_M)),)
 endif
 
 
-.PHONY: all build push summary clean build-image $(IMAGES)
+.PHONY: all build push summary clean build-image build-combination-% $(IMAGES)
 
 all: summary
 
@@ -40,14 +42,14 @@ install-dhictl:
 	chmod +x ~/.docker/cli-plugins/docker-dhi
 	$(DHICTL) --version
 
-echo-images:
+list-images:
 	@echo "Configured images to build:"
-	@cat $(BUILD_CONFIG) | yq -r '.images|keys[]' | sort
+	@echo "$(ALL_COMBINATIONS)"
 
 build-image:
-	$(call stage_status,build-image: $(IMAGE))
+	$(call stage_status,build-image: $(IMAGE)/$(OS)/$(VARIANT))
 	@{ \
-		IMAGE_URL=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].url'); \
+		IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(VARIANT).yaml; \
 		IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
 		docker buildx build \
 			$$IMAGE_URL \
@@ -58,10 +60,13 @@ build-image:
 			--load; \
 	}
 
-$(IMAGES):
-	$(MAKE) build-image IMAGE=$@
+$(addprefix build-combination-,$(ALL_COMBINATIONS)): build-combination-%:
+	@IMAGE_NAME=$$(echo '$*' | cut -d, -f1); \
+	IMAGE_OS=$$(echo '$*' | cut -d, -f2); \
+	IMAGE_VARIANT=$$(echo '$*' | cut -d, -f3); \
+	$(MAKE) build-image IMAGE=$$IMAGE_NAME OS=$$IMAGE_OS VARIANT=$$IMAGE_VARIANT
 
-build: $(IMAGES)
+build: $(addprefix build-combination-,$(ALL_COMBINATIONS))
 	$(call stage_status,build)
 
 
@@ -79,7 +84,7 @@ define summary
 	@echo ================================================================================
 	@echo Generated images:
 	@echo ================================================================================
-	@$(DOCKER_CMD) image ls \
+	@docker image ls \
 		--format "{{.Repository}}:{{.Tag}}\t{{.Size}}" \
 		--filter=dangling=false \
 		--filter=reference="$(DOCKER_REGISTRY)/*:*" | sort | column -t
@@ -87,11 +92,11 @@ endef
 
 
 clean:
-	@$(DOCKER_CMD) image rm -f $(shell $(DOCKER_CMD) image ls --format "{{.Repository}}:{{.Tag}}" --filter=dangling=false --filter=reference="$(DOCKER_REGISTRY)/*:*") 2>/dev/null || true
+	@docker image rm -f $(shell docker image ls --format "{{.Repository}}:{{.Tag}}" --filter=dangling=false --filter=reference="$(DOCKER_REGISTRY)/*:*") 2>/dev/null || true
 
 prune:
-	@$(DOCKER_CMD) system prune --all --force --volumes
-	@$(DOCKER_CMD) buildx prune --all --force
+	@docker system prune --all --force --volumes
+	@docker buildx prune --all --force
 
 summary:
 	$(call summary)
