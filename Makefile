@@ -101,9 +101,6 @@ $(addprefix build-combination-,$(ALL_COMBINATIONS)): build-combination-%:
 	IMAGE_VARIANT=$$(echo '$*' | cut -d, -f4); \
 	$(MAKE) build-image IMAGE=$$IMAGE_NAME OS=$$IMAGE_OS TAG=$$IMAGE_TAG VARIANT=$$IMAGE_VARIANT
 
-build: build-customizations build-images build-customized-images
-	$(call stage_status,build)
-
 build-images: $(addprefix build-combination-,$(ALL_COMBINATIONS))
 	$(call stage_status,build-images)
 
@@ -155,7 +152,6 @@ build-customized-image:
 	\
 	rm -rf $$TEMP_DIR
 
-
 # Customization targets
 list-customizations:
 	@echo "Available customization artifacts:"
@@ -201,6 +197,9 @@ $(addprefix build-customized-combination-,$(ALL_COMBINATIONS)): build-customized
 
 build-customized-images: $(addprefix build-customized-combination-,$(ALL_COMBINATIONS))
 	$(call stage_status,build-customized-images)
+
+build: build-customizations build-images build-customized-images
+	$(call stage_status,build)
 
 clean:
 	@docker image rm -f $(shell docker image ls --format "{{.Repository}}:{{.Tag}}" --filter=dangling=false --filter=reference="$(DOCKER_REGISTRY)/*:*") 2>/dev/null || true
