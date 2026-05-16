@@ -19,6 +19,10 @@ CUSTOMIZATION_REGISTRY ?= $(DOCKER_REGISTRY)
 
 export BUILDKIT_PROGRESS=quiet
 
+export BUILDKIT_PROGRESS=quiet
+
+BUILD_ACTION ?= --load
+
 PLATFORMS ?= linux/amd64
 # PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -39,7 +43,7 @@ endif
 
 
 .PHONY: all build push summary clean build-image build-combination-% $(IMAGES) \
-        list-customizations build-customizations push-customizations build-artifact-% push-artifact-% \
+        list-customizations build-customizations push-customizations build-artifact-% \
         build-customized-image build-customized-combination-% build-customized
 
 all: build summary
@@ -91,7 +95,7 @@ build-image:
 			--provenance=1 \
 			--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT) \
 			$$IMAGE_TAGS \
-			--load; \
+			$(BUILD_ACTION); \
 	}
 
 $(addprefix build-combination-,$(ALL_COMBINATIONS)): build-combination-%:
@@ -148,7 +152,7 @@ build-customized-image:
 		--file $$TEMP_DIR/Dockerfile \
 		--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT) \
 		$$IMAGE_TAGS \
-		--load; \
+		$(BUILD_ACTION); \
 	\
 	rm -rf $$TEMP_DIR
 
@@ -166,25 +170,14 @@ build-artifact-%:
 		--platform $$ARTIFACT_PLATFORMS \
 		--file $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts["$(ARTIFACT)"].dockerfile') \
 		--tag $(CUSTOMIZATION_REGISTRY)/dhi-customization-$(ARTIFACT):$(GIT_TAG) \
-		customizations/$(ARTIFACT)
-
-push-artifact-%: ARTIFACT=$*
-push-artifact-%: build-artifact-$(ARTIFACT)
-	$(call stage_status,push-artifact: $(ARTIFACT))
-	@ARTIFACT_PLATFORMS=$$(cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts["$(ARTIFACT)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
-	ARTIFACT_PLATFORMS=$${ARTIFACT_PLATFORMS:-$(PLATFORMS)}; \
-	docker buildx build \
-		--platform $$ARTIFACT_PLATFORMS \
-		--file $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts["$(ARTIFACT)"].dockerfile') \
-		--tag $(CUSTOMIZATION_REGISTRY)/dhi-customization-$(ARTIFACT):$(GIT_TAG) \
-		--push \
+		$$( [[ "$$ARTIFACT_PLATFORMS" == *","* ]] && [[ "$(BUILD_ACTION)" == "--load" ]] && echo "" || echo "$(BUILD_ACTION)" ) \
 		customizations/$(ARTIFACT)
 
 build-customizations: $(addprefix build-artifact-,$(ARTIFACTS))
 	$(call stage_status,build-customizations)
 
-push-customizations: $(addprefix push-artifact-,$(ARTIFACTS))
-	$(call stage_status,push-customizations)
+push-customizations: BUILD_ACTION=--push
+push-customizations: build-customizations
 
 
 # Build customized image combinations
@@ -200,6 +193,9 @@ build-customized-images: $(addprefix build-customized-combination-,$(ALL_COMBINA
 
 build: build-customizations build-images build-customized-images
 	$(call stage_status,build)
+
+push: BUILD_ACTION=--push
+push: build
 
 clean:
 	@docker image rm -f $(shell docker image ls --format "{{.Repository}}:{{.Tag}}" --filter=dangling=false --filter=reference="$(DOCKER_REGISTRY)/*:*") 2>/dev/null || true
