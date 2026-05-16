@@ -108,6 +108,9 @@ $(addprefix build-combination-,$(ALL_COMBINATIONS)): build-combination-%:
 build-images: $(addprefix build-combination-,$(ALL_COMBINATIONS))
 	$(call stage_status,build-images)
 
+push-images: BUILD_ACTION=--push
+push-images: build-images
+
 build-customized-image:
 	$(call stage_status,build-customized-image: $(IMAGE):$(GIT_TAG)-$(OS)-$(TAG)$(VARIANT) with customizations)
 	@TEMP_DIR=$$(mktemp -d); \
@@ -190,6 +193,9 @@ $(addprefix build-customized-combination-,$(ALL_COMBINATIONS)): build-customized
 
 build-customized-images: $(addprefix build-customized-combination-,$(ALL_COMBINATIONS))
 	$(call stage_status,build-customized-images)
+
+push-customized-images: BUILD_ACTION=--push
+push-customized-images: build-customized-images
 
 build: build-customizations build-images build-customized-images
 	$(call stage_status,build)
