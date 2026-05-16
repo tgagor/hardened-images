@@ -83,6 +83,7 @@ build-image:
 		IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
 		IMAGE_PLATFORMS=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
 		IMAGE_PLATFORMS=$${IMAGE_PLATFORMS:-$(PLATFORMS)}; \
+		echo "Building image for platforms: $$IMAGE_PLATFORMS with tags: $$IMAGE_TAGS"; \
 		docker buildx build \
 			$$IMAGE_URL \
 			--platform $$IMAGE_PLATFORMS \
@@ -120,7 +121,7 @@ build-customized-image:
 	fi; \
 	\
 	echo "# Customized DHI Image" > $$TEMP_DIR/Dockerfile; \
-	echo "FROM $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)" >> $$TEMP_DIR/Dockerfile; \
+	echo "FROM $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT)" >> $$TEMP_DIR/Dockerfile; \
 	echo "" >> $$TEMP_DIR/Dockerfile; \
 	\
 	for ARTIFACT in $$ALL_CUSTOMIZATIONS; do \
