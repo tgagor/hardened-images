@@ -38,11 +38,11 @@ images:
       - linux/amd64
       # - linux/arm64
     os:
-      - alpine-3.23
+      # - alpine-3.23
       - debian-13
     tags:
-      - "24"
-      - "24-sfw"
+      # - "24"
+      # - "24-sfw"
       - "26"
       - "26-sfw"
     customizations:
@@ -59,10 +59,10 @@ images:
       - alpine-3.23
       - debian-13
     tags:
-      - "3.12"
-      - "3.12-sfw"
-      - "3.13"
-      - "3.13-sfw"
+      # - "3.12"
+      # - "3.12-sfw"
+      # - "3.13"
+      # - "3.13-sfw"
       - "3.14"
       - "3.14-sfw"
     customizations:
