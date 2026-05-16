@@ -10,7 +10,7 @@ DHICTL ?= docker dhi
 DHI_REPO_URL ?= https://raw.githubusercontent.com/docker-hardened-images/catalog/refs/heads/main/image/
 # MAINTAINER ?= $(shell cat $(BUILD_CONFIG)| yq -r '.maintainer')
 IMAGES := $(shell cat $(BUILD_CONFIG) | yq -r '.images|keys[]')
-ALL_COMBINATIONS := $(shell cat $(BUILD_CONFIG) | yq -r '.images | to_entries | .[] | .key as $$image | .value.os[] as $$os | .value.variants[] as $$variant | "\($$image),\($$os),\($$variant)"')
+ALL_COMBINATIONS := $(shell cat $(BUILD_CONFIG) | yq -r '.images | to_entries | .[] | .key as $$image | .value.os[] as $$os | .value.tags[] as $$tag | "\($$image),\($$os),\($$tag) \($$image),\($$os),\($$tag),-dev"')
 DHICTL_VERSION ?= latest
 
 CUSTOMIZATIONS_CONFIG ?= customizations.yaml
@@ -77,18 +77,18 @@ list-images:
 	@echo "$(ALL_COMBINATIONS)" | tr ' ' '\n' | sort
 
 build-image:
-	$(call stage_status,build-image: $(IMAGE)/$(OS)/$(VARIANT):$(GIT_TAG))
+	$(call stage_status,build-image: $(IMAGE):$(GIT_TAG)-$(OS)-$(TAG)$(VARIANT))
 	@{ \
-		IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(VARIANT).yaml; \
+		IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(TAG)$(VARIANT).yaml; \
 		IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
 		IMAGE_PLATFORMS=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
 		IMAGE_PLATFORMS=$${IMAGE_PLATFORMS:-$(PLATFORMS)}; \
 		docker buildx build \
+			$$IMAGE_URL \
 			--platform $$IMAGE_PLATFORMS \
 			--sbom=generator=dhi.io/scout-sbom-indexer:1 \
 			--provenance=1 \
-			$$IMAGE_URL \
-			--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(VARIANT)-$(OS) \
+			--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT) \
 			$$IMAGE_TAGS \
 			--load; \
 	}
@@ -96,14 +96,15 @@ build-image:
 $(addprefix build-combination-,$(ALL_COMBINATIONS)): build-combination-%:
 	@IMAGE_NAME=$$(echo '$*' | cut -d, -f1); \
 	IMAGE_OS=$$(echo '$*' | cut -d, -f2); \
-	IMAGE_VARIANT=$$(echo '$*' | cut -d, -f3); \
-	$(MAKE) build-image IMAGE=$$IMAGE_NAME OS=$$IMAGE_OS VARIANT=$$IMAGE_VARIANT
+	IMAGE_TAG=$$(echo '$*' | cut -d, -f3); \
+	IMAGE_VARIANT=$$(echo '$*' | cut -d, -f4); \
+	$(MAKE) build-image IMAGE=$$IMAGE_NAME OS=$$IMAGE_OS TAG=$$IMAGE_TAG VARIANT=$$IMAGE_VARIANT
 
 build: build-customizations $(addprefix build-combination-,$(ALL_COMBINATIONS)) build-customized
 	$(call stage_status,build)
 
 build-customized-image:
-	$(call stage_status,build-customized-image: $(IMAGE)/$(OS)/$(VARIANT) with customizations)
+	$(call stage_status,build-customized-image: $(IMAGE):$(GIT_TAG)-$(OS)-$(TAG)$(VARIANT) with customizations)
 	@TEMP_DIR=$$(mktemp -d); \
 	IMAGE_PLATFORMS=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
 	IMAGE_PLATFORMS=$${IMAGE_PLATFORMS:-$(PLATFORMS)}; \
@@ -119,7 +120,7 @@ build-customized-image:
 	fi; \
 	\
 	echo "# Customized DHI Image" > $$TEMP_DIR/Dockerfile; \
-	echo "FROM $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(VARIANT)-$(OS)" >> $$TEMP_DIR/Dockerfile; \
+	echo "FROM $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)" >> $$TEMP_DIR/Dockerfile; \
 	echo "" >> $$TEMP_DIR/Dockerfile; \
 	\
 	for ARTIFACT in $$ALL_CUSTOMIZATIONS; do \
@@ -136,7 +137,7 @@ build-customized-image:
 		done <<< "$$(echo -e "$$GLOBAL_PATHS\n$$IMAGE_PATHS")"; \
 	done; \
 	\
-	IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(VARIANT).yaml; \
+	IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(TAG)$(VARIANT).yaml; \
 	IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
 	docker buildx build \
 		--platform $$IMAGE_PLATFORMS \
@@ -144,7 +145,7 @@ build-customized-image:
 		--provenance=1 \
 		$$TEMP_DIR \
 		--file $$TEMP_DIR/Dockerfile \
-		--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(VARIANT)-$(OS) \
+		--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT) \
 		$$IMAGE_TAGS \
 		--load; \
 	\
@@ -190,11 +191,13 @@ push-customizations: $(addprefix push-artifact-,$(ARTIFACTS))
 $(addprefix build-customized-combination-,$(ALL_COMBINATIONS)): build-customized-combination-%:
 	@IMAGE_NAME=$$(echo '$*' | cut -d, -f1); \
 	IMAGE_OS=$$(echo '$*' | cut -d, -f2); \
-	IMAGE_VARIANT=$$(echo '$*' | cut -d, -f3); \
-	$(MAKE) build-customized-image IMAGE=$$IMAGE_NAME OS=$$IMAGE_OS VARIANT=$$IMAGE_VARIANT
+	IMAGE_TAG=$$(echo '$*' | cut -d, -f3); \
+	IMAGE_VARIANT=$$(echo '$*' | cut -d, -f4); \
+	$(MAKE) build-customized-image IMAGE=$$IMAGE_NAME OS=$$IMAGE_OS TAG=$$IMAGE_TAG VARIANT=$$IMAGE_VARIANT
 
 build-customized: $(addprefix build-customized-combination-,$(ALL_COMBINATIONS))
 	$(call stage_status,build-customized)
+
 clean:
 	@docker image rm -f $(shell docker image ls --format "{{.Repository}}:{{.Tag}}" --filter=dangling=false --filter=reference="$(DOCKER_REGISTRY)/*:*") 2>/dev/null || true
 

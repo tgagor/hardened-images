@@ -13,9 +13,8 @@ images:
     #   - linux/arm64
     os:
       - alpine-3.23
-    variants:
+    tags:
       - "3.23"
-      - "3.23-dev"
     # Per-image customizations
     customizations: []
       # - artifact: npmrc
@@ -30,13 +29,10 @@ images:
     os:
       - alpine-3.23
       - debian-13
-    variants:
-      - 17
-      - 17-dev
-      - 21
-      - 21-dev
-      - 25
-      - 25-dev
+    tags:
+      - "17"
+      # - "21"
+      # - "25"
     customizations:
       - artifact: npmrc
         paths:
