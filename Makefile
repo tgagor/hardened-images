@@ -17,7 +17,7 @@ CUSTOMIZATIONS_CONFIG ?= customizations.yaml
 ARTIFACTS := $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts|keys[]' 2>/dev/null || echo '')
 CUSTOMIZATION_REGISTRY ?= $(DOCKER_REGISTRY)
 
-CUSTOMIZATION_SUFFIX ?= _custom
+export BUILDKIT_PROGRESS=quiet
 
 PLATFORMS ?= linux/amd64
 # PLATFORMS ?= linux/amd64,linux/arm64
