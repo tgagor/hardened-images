@@ -6,12 +6,12 @@ GIT_COMMIT ?= $(shell git rev-parse HEAD)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 GIT_URL ?= $(shell git config --get remote.origin.url)
 GIT_TAG ?= $(shell echo $(GIT_BRANCH) | sed -E 's/[/:]/-/g' | sed 's/main/latest/' )
-DHICTL ?= docker dhi
 DHI_REPO_URL ?= https://raw.githubusercontent.com/docker-hardened-images/catalog/refs/heads/main/image/
-# MAINTAINER ?= $(shell cat $(BUILD_CONFIG)| yq -r '.maintainer')
+DHICTL ?= docker dhi
+DHICTL_VERSION ?= latest
+MAINTAINER ?= $(shell cat $(BUILD_CONFIG)| yq -r '.maintainer')
 IMAGES := $(shell cat $(BUILD_CONFIG) | yq -r '.images|keys[]')
 ALL_COMBINATIONS := $(shell cat $(BUILD_CONFIG) | yq -r '.images | to_entries | .[] | .key as $$image | .value.os[] as $$os | .value.tags[] as $$tag | "\($$image),\($$os),\($$tag) \($$image),\($$os),\($$tag),-dev"')
-DHICTL_VERSION ?= latest
 
 CUSTOMIZATIONS_CONFIG ?= customizations.yaml
 ARTIFACTS := $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts|keys[]' 2>/dev/null || echo '')

@@ -6,6 +6,8 @@ global_customizations:
   #     - src: /etc/ssl/certs/ca-certificates.crt
   #       dest: /etc/ssl/certs/ca-certificates.crt
 
+maintainer: "Tomasz Gągor <https://gagor.pro>"
+
 images:
   # alpine-base:
   #   platforms:
