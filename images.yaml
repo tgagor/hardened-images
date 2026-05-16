@@ -41,10 +41,10 @@ images:
       # - alpine-3.23
       - debian-13
     tags:
-      # - "24"
-      # - "24-sfw"
-      - "26"
-      - "26-sfw"
+      - "24"
+      - "24-sfw"
+      # - "26"
+      # - "26-sfw"
     customizations:
       - artifact: npmrc
         paths:

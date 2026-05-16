@@ -33,6 +33,7 @@ The customization system relies on three main configuration files and a Makefile
 - `make push-customizations`: Builds and pushes the OCI artifacts defined in `customizations.yaml`.
 - `make build-customized-images`: Builds all customized images by applying the artifacts on top of the base images.
 - `make push-customized-images`: Builds and pushes all customized images defined in `images.yaml`.
+- `make <image-name>`: Builds all variations (base and customized) for a specific image (e.g., `make node`).
 - `make build-customized-image IMAGE=amazoncorretto OS=alpine-3.23 VARIANT=21`: Builds a specific customized image combination.
 
 For more details on defining and applying new customizations, read `CUSTOMIZATIONS.md`.

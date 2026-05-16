@@ -17,9 +17,7 @@ CUSTOMIZATIONS_CONFIG ?= customizations.yaml
 ARTIFACTS := $(shell cat $(CUSTOMIZATIONS_CONFIG) | yq -r '.artifacts|keys[]' 2>/dev/null || echo '')
 CUSTOMIZATION_REGISTRY ?= $(DOCKER_REGISTRY)
 
-export BUILDKIT_PROGRESS=quiet
-
-export BUILDKIT_PROGRESS=quiet
+# export BUILDKIT_PROGRESS=quiet
 
 BUILD_ACTION ?= --load
 
@@ -81,7 +79,7 @@ list-images:
 	@echo "$(ALL_COMBINATIONS)" | tr ' ' '\n' | sort
 
 build-image:
-	$(call stage_status,build-image: $(IMAGE):$(GIT_TAG)-$(OS)-$(TAG)$(VARIANT))
+	$(call stage_status,build-image: $(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT))
 	@{ \
 		IMAGE_URL=$(DHI_REPO_URL)$(IMAGE)/$(OS)/$(TAG)$(VARIANT).yaml; \
 		IMAGE_TAGS=$$(curl -s "$$IMAGE_URL" | yq -r '.tags[]' | sed 's|^|--tag $(DOCKER_REGISTRY)/$(IMAGE):|' | tr '\n' ' '); \
@@ -112,7 +110,7 @@ push-images: BUILD_ACTION=--push
 push-images: build-images
 
 build-customized-image:
-	$(call stage_status,build-customized-image: $(IMAGE):$(GIT_TAG)-$(OS)-$(TAG)$(VARIANT) with customizations)
+	$(call stage_status,build-customized-image: $(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT) with customizations)
 	@TEMP_DIR=$$(mktemp -d); \
 	IMAGE_PLATFORMS=$$(cat $(BUILD_CONFIG) | yq -r '.images["$(IMAGE)"].platforms[]?' 2>/dev/null | tr '\n' ',' | sed 's/,$$//' ); \
 	IMAGE_PLATFORMS=$${IMAGE_PLATFORMS:-$(PLATFORMS)}; \
@@ -153,7 +151,7 @@ build-customized-image:
 		--provenance=1 \
 		$$TEMP_DIR \
 		--file $$TEMP_DIR/Dockerfile \
-		--tag $(DOCKER_REGISTRY)/$(IMAGE):$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT) \
+		--tag $(DOCKER_REGISTRY)/$(IMAGE)-customized:$(GIT_TAG)-$(TAG)-$(OS)$(VARIANT) \
 		$$IMAGE_TAGS \
 		$(BUILD_ACTION); \
 	\
@@ -199,6 +197,15 @@ push-customized-images: build-customized-images
 
 build: build-customizations build-images build-customized-images
 	$(call stage_status,build)
+
+$(IMAGES): %:
+	$(call stage_status,building image: $*)
+	@for combo in $(ALL_COMBINATIONS); do \
+		if [[ $$combo == $*","* ]]; then \
+			$(MAKE) build-combination-$$combo; \
+			$(MAKE) build-customized-combination-$$combo; \
+		fi; \
+	done
 
 push: BUILD_ACTION=--push
 push: build
